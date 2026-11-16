@@ -1,7 +1,9 @@
 from PIL import Image, ImageFont, ImageDraw
 import numpy as np
 
-CHARS = set("`1234567890-=~!@#$%^&*()_+qwertyuiop[]\\QWERTYUIOP{}|asdfghjkl;'ASDFGHJKL:\"zxcvbnm,./ZXCVBNM<>?·∙◦∘•○●▪■░▒▓█")
+CHARS = set("`1234567890-=~!@#$%^&*()_+qwertyuiop[]\\QWERTYUIOP{}|asdfghjkl;'ASDFGHJKL:\"zxcvbnm,./ZXCVBNM<>?·∙◦∘•○●▪■░▒▓█×÷±¤°⊙⊕⊗⊘□▫◇◆◊◎◉◌◍ΘΦΩΨЖШЮЫ˙ͺι")
+# Include every nonblank Braille pattern
+CHARS.update(chr(codepoint) for codepoint in range(0x2801, 0x2900))
 if "'" in CHARS:
     CHARS.remove("'")
 FONTFILE = "DejaVuSansMono.ttf"
