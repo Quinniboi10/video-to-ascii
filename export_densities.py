@@ -1,7 +1,7 @@
 from PIL import Image, ImageFont, ImageDraw
 import numpy as np
 
-CHARS = set("`1234567890-=~!@#$%^&*()_+qwertyuiop[]\\QWERTYUIOP{}|asdfghjkl;'ASDFGHJKL:\"zxcvbnm,./ZXCVBNM<>?")
+CHARS = set("`1234567890-=~!@#$%^&*()_+qwertyuiop[]\\QWERTYUIOP{}|asdfghjkl;'ASDFGHJKL:\"zxcvbnm,./ZXCVBNM<>?·∙◦∘•○●▪■░▒▓█")
 if "'" in CHARS:
     CHARS.remove("'")
 FONTFILE = "DejaVuSansMono.ttf"
