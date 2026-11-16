@@ -1,10 +1,5 @@
 use std::{
-    env,
-    io::{self, Read, Write},
-    process::{Command, Stdio},
-    collections::HashMap,
-    time,
-    thread
+    collections::HashMap, env, io::{self, Read, Write}, process::{Command, Stdio, exit}, thread, time
 };
 
 use image::{
@@ -138,6 +133,8 @@ fn main() {
     if mode == "image" {
         let frame = &image::open(file).unwrap().to_rgb8();
         println!("{}", frame_to_str(&frame, cols as u32, lines as u32, &map, fullwidth_only));
+
+        exit(0);
     }
 
     let frames = load_video(file, cols, lines).unwrap();
