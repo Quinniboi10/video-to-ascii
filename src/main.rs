@@ -152,6 +152,12 @@ fn frame_to_str(raw_img: &RgbImage, width: u32, height: u32, map: &HashMap<i32, 
 fn main() {
     let args = Args::parse();
 
+    #[cfg(windows)]
+    if !crossterm::ansi_support::supports_ansi() {
+        eprintln!("This console cannot parse ANSI colors");
+        exit(1);
+    }
+
     let (cols, lines) = terminal::size().unwrap();
     let map: HashMap<i32, (char, f64)> = (0..=(255)).map(|v| (v, get_closest_char(v as f64 / 255.0, &args))).collect();
 
