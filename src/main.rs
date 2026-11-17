@@ -14,19 +14,30 @@ use clap::{Parser, ValueEnum};
 
 use crossterm::terminal;
 
-const CHARS: [(char, f64); 32] = [('˙', 0.014086057004511938), ('`', 0.024100363156157142), ('-', 0.0357653791130186), (',', 0.045339495983272804), (';', 0.06272697259821723), ('"', 0.0719709475074282), ('◌', 0.08275558490150764), ('∙', 0.09381534059645646), ('÷', 0.10630571145592606), ('<', 0.11846594035435237), ('◇', 0.12941564872895345), ('l', 0.1416859249477275), ('s', 0.15203037306041595), ('T', 0.1626499394739738), ('V', 0.17888191922526683), ('h', 0.18796082315395618), ('e', 0.20072631231429514), ('▪', 0.2118961153295917), ('6', 0.22400132056784414), ('E', 0.236381644106966), ('Φ', 0.24595576097722022), ('Ψ', 0.2585561791570375), ('◍', 0.26653460988224936), ('B', 0.27941014636293604), ('Ж', 0.2936062506877958), ('Ю', 0.3040607461208319), ('@', 0.3333883569935072), ('●', 0.39072301089468464), ('▒', 0.49257180587652694), ('■', 0.4980191482337405), ('▓', 0.8037856278199625), ('█', 1.0)];
+const ASCII_CHARS: [(char, f64); 52] = [('.', 0.05215382076250206), ('`', 0.07228915662650601), (':', 0.10430764152500412), ('-', 0.10727842878362767), (',', 0.1359960389503218), (';', 0.18814985971282389), ('"', 0.2158772074599769), ('~', 0.22313913186994552), ('^', 0.23106123122627495), ('!', 0.24508994883644167), ('_', 0.2525169169830005), ('/', 0.31292292457501236), ('r', 0.31473840567750455), ('(', 0.335368872751279), (')', 0.33784452880013205), ('<', 0.3553391648786928), ('?', 0.3606205644495792), ('v', 0.37266875722066345), ('x', 0.3952797491335204), ('c', 0.4048522858557518), ('l', 0.4249876217197557), ('i', 0.4348902459151675), ('L', 0.4438026076910381), ('s', 0.4560158441987126), ('y', 0.47186004291137146), ('t', 0.48506354183858724), ('T', 0.4878692853606206), ('o', 0.5098201023271166), ('V', 0.5365571876547285), ('2', 0.5520712988942069), ('h', 0.5637894041921109), ('a', 0.5839247400561148), ('3', 0.5888760521538208), ('e', 0.6020795510810364), ('A', 0.6095065192275954), ('q', 0.6220498432084502), ('$', 0.6364086482917973), ('K', 0.6540683281069483), ('b', 0.6586895527314738), ('6', 0.6718930516586895), ('O', 0.6803102822247895), ('0', 0.6938438686251857), ('E', 0.7090278923914838), ('g', 0.7166199042746327), ('D', 0.7270176596798151), ('R', 0.7466578643340485), ('M', 0.7560653573196897), ('W', 0.7575507509490015), ('N', 0.7796666116520876), ('#', 0.7851130549595643), ('B', 0.8380920944050172), ('@', 1.0)];
+const MIXED_CHARS: [(char, f64); 4] = [('░', 0.182348409816221), ('▒', 0.49257180587652694), ('▓', 0.8037856278199625), ('█', 1.0)];
 
-#[derive(Debug, Clone, ValueEnum, PartialEq)]
+#[derive(Clone, ValueEnum, PartialEq)]
 enum DisplayType {
     Image,
     Video,
 }
 
+#[derive(Clone, ValueEnum, PartialEq)]
+enum OutputMode {
+    FullwidthOnly,
+    ASCII,
+    Mixed
+}
+
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// Either 'image' or 'video'
-    mode: DisplayType,
+    /// Output format to provide
+    output_mode: OutputMode,
+
+    /// Type of media to be processed
+    media_type: DisplayType,
 
     /// Filepath to the target media
     path: String,
@@ -75,28 +86,36 @@ fn load_video(path: &str, width: u16, height: u16, fps: u32) -> io::Result<Vec<R
     Ok(frames)
 }
 
-fn get_closest_char(target: f64, fullwidth_only: bool) -> char {
-    if fullwidth_only {
-        return '█';
+fn get_closest_char(target: f64, args: &Args) -> (char, f64) {
+    if args.output_mode == OutputMode::FullwidthOnly {
+        return ('█', 1.0);
     }
-    let mut best = 256.0;
+    let mut best = f64::MAX;
     let mut best_ch = '\0';
+    let mut best_density = f64::NAN;
 
-    for (ch, density) in CHARS {
-        let diff = (density - target).abs();
+    let chars = if args.output_mode == OutputMode::ASCII { ASCII_CHARS.as_slice() } else { MIXED_CHARS.as_slice() };
+
+    for (ch, density) in chars {
+        let mut diff = density - target;
+        if args.output_mode == OutputMode::Mixed && diff < 0.0 {
+            diff += 1e10; // In mixed mode we want the selected char's density to be >= the requirement (dimmed by colors)
+        }
+        diff = diff.abs();
         if diff < best {
             best = diff;
-            best_ch = ch;
+            best_ch = *ch;
+            best_density = *density;
         }
     }
 
     assert_ne!(best_ch, '\0');
-    return best_ch;
+    return (best_ch, best_density);
 }
 
-fn color(mut r: u8, mut g: u8, mut b: u8, fullwidth_only: bool) -> String {
-    let sum_colors = r.saturating_add(g).saturating_add(b);
-    if sum_colors > 0 && !fullwidth_only {
+fn color(mut r: u8, mut g: u8, mut b: u8, ch_density: f64, args: &Args) -> String {
+    let sum_colors = r as u16 + g as u16 + b as u16;
+    if sum_colors > 0 && args.output_mode == OutputMode::ASCII {
         // Not much goes smaller than a period character (roughly 5% ink) so really dark colors should be boosted less
         // Basically anything works as long as 0 -> 0 and (255*3) -> (255*3)
         let m = 255.0 / r.max(g).max(b) as f64 * ((sum_colors as f64) * (765.0 as f64).powf(3.0)).powf(0.25) / (255.0 * 3.0);
@@ -104,10 +123,16 @@ fn color(mut r: u8, mut g: u8, mut b: u8, fullwidth_only: bool) -> String {
         g = (g as f64 * m) as u8;
         b = (b as f64 * m) as u8;
     }
+    else if sum_colors > 0 && args.output_mode == OutputMode::Mixed {
+        let m = 1.0 / ch_density.powf(1.0 / 2.2);
+        r = (r as f64 * m).min(255.0) as u8;
+        g = (g as f64 * m).min(255.0) as u8;
+        b = (b as f64 * m).min(255.0) as u8;
+    }
     return format!("\x1b[38;2;{};{};{}m", r, g, b);
 }
 
-fn frame_to_str(raw_img: &RgbImage, width: u32, height: u32, map: &HashMap<i32, char>, fullwidth_only: bool) -> String {
+fn frame_to_str(raw_img: &RgbImage, width: u32, height: u32, map: &HashMap<i32, (char, f64)>, args: &Args) -> String {
     let img = resize(raw_img, width, height, FilterType::Triangle);
 
     let mut res = String::new();
@@ -115,8 +140,9 @@ fn frame_to_str(raw_img: &RgbImage, width: u32, height: u32, map: &HashMap<i32, 
     for row in 0..height {
         for col in 0..width {
             let [r, g, b] = img[(col, row)].0;
-            res.push_str(&color(r, g, b, fullwidth_only));
-            res.push(map[&(r as i32 + g as i32 + b as i32)]);
+            let (ch, ch_density) = if args.output_mode == OutputMode::Mixed { map[&(r.max(g).max(b) as i32 * 3)] } else { map[&(r as i32 + g as i32 + b as i32)] };
+            res.push_str(&color(r, g, b, ch_density, args));
+            res.push(ch);
         }
         if row != height - 1 {
             res.push('\n');
@@ -129,22 +155,14 @@ fn frame_to_str(raw_img: &RgbImage, width: u32, height: u32, map: &HashMap<i32, 
 fn main() {
     let args = Args::parse();
 
-    let mut buf = String::new();
-    print!("Fullwidth only (1) or ASCII (2) > ");
-    io::stdout().flush().unwrap();
-    io::stdin().read_line(&mut buf).unwrap();
-    let choice = buf.chars().nth(0).unwrap();
-    assert!(choice == '1' || choice == '2');
-
-    let fullwidth_only = choice == '1';
-
     let (cols, lines) = terminal::size().unwrap();
-    let map: HashMap<i32, char> = (0..=(255*3)).map(|v| (v, get_closest_char(v as f64 / 3.0 / 255.0, fullwidth_only))).collect();
+    let map: HashMap<i32, (char, f64)> = (0..=(255*3)).map(|v| (v, get_closest_char(v as f64 / 3.0 / 255.0, &args))).collect();
 
-    if args.mode == DisplayType::Image {
-        let frame = &image::open(args.path).unwrap().to_rgb8();
-        println!("{}", frame_to_str(&frame, cols as u32, lines as u32, &map, fullwidth_only));
-
+    if args.media_type == DisplayType::Image {
+        let frame = &image::open(&args.path).unwrap().to_rgb8();
+        print!("\x1b[48;2;0;0;0m\x1b[2J"); // Clear + black bg
+        println!("{}", frame_to_str(&frame, cols as u32, lines as u32, &map, &args));
+        print!("\x1b[0m");
         exit(0);
     }
 
@@ -155,7 +173,7 @@ fn main() {
     // Sound
     let mut handle = rodio::DeviceSinkBuilder::open_default_sink().unwrap();
     handle.log_on_drop(false);
-    let file = File::open(args.path).unwrap();
+    let file = File::open(&args.path).unwrap();
     let source = Decoder::try_from(file).unwrap();
     let player = Player::connect_new(handle.mixer());
     player.append(source);
@@ -166,7 +184,7 @@ fn main() {
 
     let mut displayed_frames = 0 as u64;
 
-    print!("\x1b[2J");
+    print!("\x1b[48;2;0;0;0m\x1b[2J"); // Clear + black bg
     while !player.empty() {
         let time = player.get_pos().as_secs_f64();
         let frame = (time * args.fps as f64).round() as usize;
@@ -174,7 +192,7 @@ fn main() {
             break;
         }
         write!(stdout, "\x1b[?2026h\x1b[H").unwrap(); // Freeze rendering, home
-        write!(stdout, "{}", frame_to_str(&frames[frame], cols as u32, lines as u32, &map, fullwidth_only)).unwrap();
+        write!(stdout, "{}", frame_to_str(&frames[frame], cols as u32, lines as u32, &map, &args)).unwrap();
         write!(stdout, "\x1b[?2026l").unwrap(); // Unfreeze rendering
         stdout.flush().unwrap();
         displayed_frames += 1;
