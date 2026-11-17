@@ -182,7 +182,7 @@ fn main() {
         exit(1);
     }
 
-    let (cols, lines) = terminal::size().unwrap();
+    let (mut cols, mut lines) = terminal::size().unwrap();
     let map: HashMap<i32, (char, f64)> = (0..=(255)).map(|v| (v, get_closest_char(v as f64 / 255.0, &args))).collect();
 
     let start = time::Instant::now();
@@ -232,6 +232,7 @@ fn main() {
         write!(stdout, "{}", frame_to_str(&frames[frame], cols as u32, lines as u32, &map, &args)).unwrap();
         write!(stdout, "\x1b[?2026l").unwrap(); // Unfreeze rendering
         stdout.flush().unwrap();
+        (cols, lines) = terminal::size().unwrap();
         displayed_frames += 1;
         next_frame += frame_time;
         thread::sleep(next_frame.saturating_duration_since(time::Instant::now()));
