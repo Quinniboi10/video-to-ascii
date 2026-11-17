@@ -142,7 +142,8 @@ fn main() {
     let mut stdout = io::stdout().lock();
 
     // Sound
-    let handle = rodio::DeviceSinkBuilder::open_default_sink().unwrap();
+    let mut handle = rodio::DeviceSinkBuilder::open_default_sink().unwrap();
+    handle.log_on_drop(false);
     let file = File::open(file).unwrap();
     let source = Decoder::try_from(file).unwrap();
     let player = Player::connect_new(handle.mixer());
@@ -152,6 +153,8 @@ fn main() {
     let mut next_frame = time::Instant::now();
     let frame_time = time::Duration::from_millis(1000 / FPS as u64);
 
+    let mut displayed_frames = 0 as u64;
+
     print!("\x1b[2J");
     while !player.empty() {
         let time = player.get_pos().as_secs_f64();
@@ -159,9 +162,11 @@ fn main() {
         if frame >= frames.len() {
             break;
         }
-        write!(stdout, "\x1b[H").unwrap();
+        write!(stdout, "\x1b[?2026h\x1b[H").unwrap(); // Freeze rendering, home
         write!(stdout, "{}", frame_to_str(&frames[frame], cols as u32, lines as u32, &map, fullwidth_only)).unwrap();
+        write!(stdout, "\x1b[?2026l").unwrap(); // Unfreeze rendering
         stdout.flush().unwrap();
+        displayed_frames += 1;
         next_frame += frame_time;
         thread::sleep(next_frame.saturating_duration_since(time::Instant::now()));
     }
@@ -171,5 +176,5 @@ fn main() {
 
     print!("\x1b[0m");
     println!("{} s elapsed", elapsed);
-    println!("{:.2} FPS", frames.len() as f64 / elapsed as f64);
+    println!("{:.2} FPS", displayed_frames as f64 / elapsed as f64);
 }
