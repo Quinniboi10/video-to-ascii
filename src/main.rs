@@ -115,16 +115,8 @@ fn get_closest_char(target: f64, args: &Args) -> (char, f64) {
 
 fn color(mut r: u8, mut g: u8, mut b: u8, ch_density: f64, args: &Args) -> String {
     let sum_colors = r as u16 + g as u16 + b as u16;
-    if sum_colors > 0 && args.output_mode == OutputMode::ASCII {
-        // Not much goes smaller than a period character (roughly 5% ink) so really dark colors should be boosted less
-        // Basically anything works as long as 0 -> 0 and (255*3) -> (255*3)
-        let m = 255.0 / r.max(g).max(b) as f64 * ((sum_colors as f64) * (765.0 as f64).powf(3.0)).powf(0.25) / (255.0 * 3.0);
-        r = (r as f64 * m) as u8;
-        g = (g as f64 * m) as u8;
-        b = (b as f64 * m) as u8;
-    }
-    else if sum_colors > 0 && args.output_mode == OutputMode::Mixed {
-        let m = 1.0 / ch_density.powf(1.0 / 2.2);
+    if sum_colors > 0 && args.output_mode != OutputMode::FullwidthOnly {
+        let m = 1.0 / ch_density.powf(1.0 / 2.2); // Approximate luminance
         r = (r as f64 * m).min(255.0) as u8;
         g = (g as f64 * m).min(255.0) as u8;
         b = (b as f64 * m).min(255.0) as u8;
@@ -140,7 +132,7 @@ fn frame_to_str(raw_img: &RgbImage, width: u32, height: u32, map: &HashMap<i32, 
     for row in 0..height {
         for col in 0..width {
             let [r, g, b] = img[(col, row)].0;
-            let (ch, ch_density) = if args.output_mode == OutputMode::Mixed { map[&(r.max(g).max(b) as i32 * 3)] } else { map[&(r as i32 + g as i32 + b as i32)] };
+            let (ch, ch_density) = map[&(r.max(g).max(b) as i32)];
             res.push_str(&color(r, g, b, ch_density, args));
             res.push(ch);
         }
@@ -156,7 +148,7 @@ fn main() {
     let args = Args::parse();
 
     let (cols, lines) = terminal::size().unwrap();
-    let map: HashMap<i32, (char, f64)> = (0..=(255*3)).map(|v| (v, get_closest_char(v as f64 / 3.0 / 255.0, &args))).collect();
+    let map: HashMap<i32, (char, f64)> = (0..=(255)).map(|v| (v, get_closest_char(v as f64 / 255.0, &args))).collect();
 
     if args.media_type == DisplayType::Image {
         let frame = &image::open(&args.path).unwrap().to_rgb8();
