@@ -1,9 +1,11 @@
 [package]
-name = "riir"
+name = "video-to-ascii"
 version = "0.1.0"
+description = "Display images and videos as colored Unicode/ASCII text"
 edition = "2024"
 
 [dependencies]
+clap = { version = "4.6.8", features = ["derive"] }
 crossterm = "0.29.0"
 image = "0.25.10"
 rodio = { version = "0.23.0", features = ["mp4"] }

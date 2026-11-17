@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap, env, io::{self, Read, Write}, process::{Command, Stdio, exit}, thread, time
+    collections::HashMap, io::{self, Read, Write}, process::{Command, Stdio, exit}, thread, time
 };
 
 use image::{
@@ -10,18 +10,38 @@ use image::{
 use rodio::{Decoder, Player};
 use std::fs::File;
 
+use clap::{Parser, ValueEnum};
+
 use crossterm::terminal;
 
 const CHARS: [(char, f64); 32] = [('˙', 0.014086057004511938), ('`', 0.024100363156157142), ('-', 0.0357653791130186), (',', 0.045339495983272804), (';', 0.06272697259821723), ('"', 0.0719709475074282), ('◌', 0.08275558490150764), ('∙', 0.09381534059645646), ('÷', 0.10630571145592606), ('<', 0.11846594035435237), ('◇', 0.12941564872895345), ('l', 0.1416859249477275), ('s', 0.15203037306041595), ('T', 0.1626499394739738), ('V', 0.17888191922526683), ('h', 0.18796082315395618), ('e', 0.20072631231429514), ('▪', 0.2118961153295917), ('6', 0.22400132056784414), ('E', 0.236381644106966), ('Φ', 0.24595576097722022), ('Ψ', 0.2585561791570375), ('◍', 0.26653460988224936), ('B', 0.27941014636293604), ('Ж', 0.2936062506877958), ('Ю', 0.3040607461208319), ('@', 0.3333883569935072), ('●', 0.39072301089468464), ('▒', 0.49257180587652694), ('■', 0.4980191482337405), ('▓', 0.8037856278199625), ('█', 1.0)];
 
-const FPS: usize = 30;
+#[derive(Debug, Clone, ValueEnum, PartialEq)]
+enum DisplayType {
+    Image,
+    Video,
+}
 
-fn load_video(path: &str, width: u16, height: u16) -> io::Result<Vec<RgbImage>> {
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Either 'image' or 'video'
+    mode: DisplayType,
+
+    /// Filepath to the target media
+    path: String,
+
+    /// Target FPS
+    #[arg(short, long, default_value_t = 30)]
+    fps: u32
+}
+
+fn load_video(path: &str, width: u16, height: u16, fps: u32) -> io::Result<Vec<RgbImage>> {
     let mut child = Command::new("ffmpeg")
         .args([
             "-v", "error",
             "-i", path,
-            "-vf", &format!("fps={FPS},scale={width}:{height}"),
+            "-vf", &format!("fps={fps},scale={width}:{height}"),
             "-f", "rawvideo",
             "-pix_fmt", "rgb24",
             "pipe:1",
@@ -107,16 +127,7 @@ fn frame_to_str(raw_img: &RgbImage, width: u32, height: u32, map: &HashMap<i32, 
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() != 3 {
-        eprintln!("Usage ./path/to/exe <image/video> <path>");
-        panic!();
-    }
-    let mode = args.get(1).unwrap().to_lowercase();
-    let file = args.get(2).unwrap();
-
-    assert!(mode == "image" || mode == "video");
+    let args = Args::parse();
 
     let mut buf = String::new();
     print!("Fullwidth only (1) or ASCII (2) > ");
@@ -130,35 +141,35 @@ fn main() {
     let (cols, lines) = terminal::size().unwrap();
     let map: HashMap<i32, char> = (0..=(255*3)).map(|v| (v, get_closest_char(v as f64 / 3.0 / 255.0, fullwidth_only))).collect();
 
-    if mode == "image" {
-        let frame = &image::open(file).unwrap().to_rgb8();
+    if args.mode == DisplayType::Image {
+        let frame = &image::open(args.path).unwrap().to_rgb8();
         println!("{}", frame_to_str(&frame, cols as u32, lines as u32, &map, fullwidth_only));
 
         exit(0);
     }
 
-    let frames = load_video(file, cols, lines).unwrap();
+    let frames = load_video(&args.path, cols, lines, args.fps).unwrap();
 
     let mut stdout = io::stdout().lock();
 
     // Sound
     let mut handle = rodio::DeviceSinkBuilder::open_default_sink().unwrap();
     handle.log_on_drop(false);
-    let file = File::open(file).unwrap();
+    let file = File::open(args.path).unwrap();
     let source = Decoder::try_from(file).unwrap();
     let player = Player::connect_new(handle.mixer());
     player.append(source);
 
     let start = time::Instant::now();
     let mut next_frame = time::Instant::now();
-    let frame_time = time::Duration::from_millis(1000 / FPS as u64);
+    let frame_time = time::Duration::from_millis(1000 / args.fps as u64);
 
     let mut displayed_frames = 0 as u64;
 
     print!("\x1b[2J");
     while !player.empty() {
         let time = player.get_pos().as_secs_f64();
-        let frame = (time * FPS as f64).round() as usize;
+        let frame = (time * args.fps as f64).round() as usize;
         if frame >= frames.len() {
             break;
         }
