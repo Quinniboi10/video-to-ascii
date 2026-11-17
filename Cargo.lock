@@ -2027,6 +2027,7 @@ dependencies = [
  "clap",
  "crossterm",
  "image",
+ "rand 0.10.4",
  "rodio",
 ]
 

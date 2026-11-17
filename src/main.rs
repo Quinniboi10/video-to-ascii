@@ -20,7 +20,8 @@ const MIXED_CHARS: [(char, f64); 4] = [('░', 0.182348409816221), ('▒', 0.492
 #[derive(Clone, ValueEnum, PartialEq)]
 enum DisplayType {
     Image,
-    Video,
+    Animate,
+    Video
 }
 
 #[derive(Clone, ValueEnum, PartialEq)]
@@ -132,7 +133,11 @@ fn frame_to_str(raw_img: &RgbImage, width: u32, height: u32, map: &HashMap<i32, 
     for row in 0..height {
         for col in 0..width {
             let [r, g, b] = img[(col, row)].0;
-            let (ch, ch_density) = map[&(r.max(g).max(b) as i32)];
+            let (mut ch, ch_density) = map[&(r.max(g).max(b) as i32)];
+            // If we're animating a picture, randomly add some noise
+            if args.media_type == DisplayType::Animate && rand::random::<f64>() < 0.01 {
+                ch = '*';
+            }
             res.push_str(&color(r, g, b, ch_density, args));
             res.push(ch);
         }
@@ -150,17 +155,31 @@ fn main() {
     let (cols, lines) = terminal::size().unwrap();
     let map: HashMap<i32, (char, f64)> = (0..=(255)).map(|v| (v, get_closest_char(v as f64 / 255.0, &args))).collect();
 
-    if args.media_type == DisplayType::Image {
+    let start = time::Instant::now();
+    let mut next_frame = time::Instant::now();
+    let frame_time = time::Duration::from_millis(1000 / args.fps as u64);
+
+    let mut stdout = io::stdout().lock();
+
+    if args.media_type == DisplayType::Image || args.media_type == DisplayType::Animate {
         let frame = &image::open(&args.path).unwrap().to_rgb8();
         print!("\x1b[48;2;0;0;0m\x1b[2J"); // Clear + black bg
-        println!("{}", frame_to_str(&frame, cols as u32, lines as u32, &map, &args));
+        loop {
+            write!(stdout, "\x1b[?2026h\x1b[H").unwrap(); // Freeze rendering, home
+            println!("{}", frame_to_str(&frame, cols as u32, lines as u32, &map, &args));
+            write!(stdout, "\x1b[?2026l").unwrap(); // Unfreeze rendering
+
+            if args.media_type != DisplayType::Animate {
+                break;
+            }
+            next_frame += frame_time;
+            thread::sleep(next_frame.saturating_duration_since(time::Instant::now()));
+        }
         print!("\x1b[0m");
         exit(0);
     }
 
     let frames = load_video(&args.path, cols, lines, args.fps).unwrap();
-
-    let mut stdout = io::stdout().lock();
 
     // Sound
     let mut handle = rodio::DeviceSinkBuilder::open_default_sink().unwrap();
@@ -169,10 +188,6 @@ fn main() {
     let source = Decoder::try_from(file).unwrap();
     let player = Player::connect_new(handle.mixer());
     player.append(source);
-
-    let start = time::Instant::now();
-    let mut next_frame = time::Instant::now();
-    let frame_time = time::Duration::from_millis(1000 / args.fps as u64);
 
     let mut displayed_frames = 0 as u64;
 
