@@ -196,7 +196,7 @@ fn main() {
         print!("\x1b[48;2;0;0;0m\x1b[2J"); // Clear + black bg
         loop {
             write!(stdout, "\x1b[?2026h\x1b[H").unwrap(); // Freeze rendering, home
-            println!("{}", frame_to_str(&frame, cols as u32, lines as u32, &map, &args));
+            write!(stdout, "{}", frame_to_str(&frame, cols as u32, lines as u32, &map, &args)).unwrap();
             write!(stdout, "\x1b[?2026l").unwrap(); // Unfreeze rendering
 
             if args.media_type != DisplayType::Animate {
