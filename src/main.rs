@@ -14,6 +14,8 @@ use clap::{Parser, ValueEnum};
 
 use crossterm::terminal;
 
+use indicatif::{ProgressBar, ProgressStyle};
+
 const ASCII_CHARS: [(char, f64); 52] = [('.', 0.05215382076250206), ('`', 0.07228915662650601), (':', 0.10430764152500412), ('-', 0.10727842878362767), (',', 0.1359960389503218), (';', 0.18814985971282389), ('"', 0.2158772074599769), ('~', 0.22313913186994552), ('^', 0.23106123122627495), ('!', 0.24508994883644167), ('_', 0.2525169169830005), ('/', 0.31292292457501236), ('r', 0.31473840567750455), ('(', 0.335368872751279), (')', 0.33784452880013205), ('<', 0.3553391648786928), ('?', 0.3606205644495792), ('v', 0.37266875722066345), ('x', 0.3952797491335204), ('c', 0.4048522858557518), ('l', 0.4249876217197557), ('i', 0.4348902459151675), ('L', 0.4438026076910381), ('s', 0.4560158441987126), ('y', 0.47186004291137146), ('t', 0.48506354183858724), ('T', 0.4878692853606206), ('o', 0.5098201023271166), ('V', 0.5365571876547285), ('2', 0.5520712988942069), ('h', 0.5637894041921109), ('a', 0.5839247400561148), ('3', 0.5888760521538208), ('e', 0.6020795510810364), ('A', 0.6095065192275954), ('q', 0.6220498432084502), ('$', 0.6364086482917973), ('K', 0.6540683281069483), ('b', 0.6586895527314738), ('6', 0.6718930516586895), ('O', 0.6803102822247895), ('0', 0.6938438686251857), ('E', 0.7090278923914838), ('g', 0.7166199042746327), ('D', 0.7270176596798151), ('R', 0.7466578643340485), ('M', 0.7560653573196897), ('W', 0.7575507509490015), ('N', 0.7796666116520876), ('#', 0.7851130549595643), ('B', 0.8380920944050172), ('@', 1.0)];
 const MIXED_CHARS: [(char, f64); 4] = [('░', 0.182348409816221), ('▒', 0.49257180587652694), ('▓', 0.8037856278199625), ('█', 1.0)];
 
@@ -49,6 +51,15 @@ struct Args {
 }
 
 fn load_video(path: &str, width: u16, height: u16, fps: u32) -> io::Result<Vec<RgbImage>> {
+    let video_time_s = String::from_utf8_lossy(&Command::new("ffprobe").args([
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        path
+    ]).output().unwrap().stdout).trim().parse::<f64>().unwrap();
+
+    let n_frames = (video_time_s * fps as f64).round() as u64;
+
     let mut child = Command::new("ffmpeg")
         .args([
             "-v", "error",
@@ -60,6 +71,15 @@ fn load_video(path: &str, width: u16, height: u16, fps: u32) -> io::Result<Vec<R
         ])
         .stdout(Stdio::piped())
         .spawn()?;
+
+    let pbar = ProgressBar::new(n_frames);
+
+    pbar.set_message("Processing video");
+    pbar.set_style(
+        ProgressStyle::with_template(
+            "{msg} [{wide_bar:.cyan/blue}] {pos}/{len} ({percent}%) [{elapsed_precise}<{eta_precise}, {per_sec}]"
+        ).unwrap()
+    );
 
     let mut stdout = child.stdout.take().unwrap();
     let frame_size = width as usize * height as usize * 3;
@@ -77,7 +97,11 @@ fn load_video(path: &str, width: u16, height: u16, fps: u32) -> io::Result<Vec<R
             Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
             Err(e) => return Err(e),
         }
+
+        pbar.inc(1);
     }
+
+    pbar.finish_and_clear();
 
     let status = child.wait()?;
     if !status.success() {
