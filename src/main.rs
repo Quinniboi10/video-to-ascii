@@ -149,6 +149,17 @@ fn color(mut r: u8, mut g: u8, mut b: u8, ch_density: f64, args: &Args) -> Strin
     return format!("\x1b[38;2;{};{};{}m", r, g, b);
 }
 
+fn get_ch_ch_density(r: u8, g: u8, b: u8, map: &HashMap<i32, (char, f64)>, args: &Args) -> (char, f64) {
+    let mut brightest = r.max(g).max(b);
+    let (mut ch, mut ch_density) = map[&(brightest as i32)];
+    // If we're animating a picture, randomly add some noise
+    if args.media_type == DisplayType::Animate && rand::random::<f64>() < 0.01 {
+        brightest = (brightest as f64 * 0.7).round() as u8;
+        (ch, ch_density) = map[&(brightest as i32)];
+    }
+    return (ch, ch_density);
+}
+
 fn frame_to_str(raw_img: &RgbImage, width: u32, height: u32, map: &HashMap<i32, (char, f64)>, args: &Args) -> String {
     let img = resize(raw_img, width, height, FilterType::Triangle);
 
@@ -157,11 +168,7 @@ fn frame_to_str(raw_img: &RgbImage, width: u32, height: u32, map: &HashMap<i32, 
     for row in 0..height {
         for col in 0..width {
             let [r, g, b] = img[(col, row)].0;
-            let (mut ch, ch_density) = map[&(r.max(g).max(b) as i32)];
-            // If we're animating a picture, randomly add some noise
-            if args.media_type == DisplayType::Animate && rand::random::<f64>() < 0.01 {
-                ch = '*';
-            }
+            let (ch, ch_density) = get_ch_ch_density(r, g, b, map, args);
             res.push_str(&color(r, g, b, ch_density, args));
             res.push(ch);
         }
